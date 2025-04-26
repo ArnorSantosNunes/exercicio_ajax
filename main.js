@@ -12,20 +12,21 @@ document.addEventListener('DOMContentLoaded', function() {
     botaoCarregar.addEventListener('click', async function() {
         const nomeDoPerfil = nomeDoPerfilInput.value.trim();
 
-        
+        // Validação inicial com throw new Error()
         if (!nomeDoPerfil) {
-            alert("Por favor, insira um nome de usuário do GitHub.");
+            throw new Error("Por favor, insira um nome de usuário do GitHub.");
             return;
         }
 
-        try {
-            
+    try {
             botaoCarregar.disabled = true;
             botaoCarregar.textContent = "Carregando...";
 
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos
+    const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                throw new Error("Tempo limite excedido. A requisição demorou mais de 10 segundos.");
+            }, 10000);
 
             const response = await fetch(`https://api.github.com/users/${nomeDoPerfil}`, {
                 signal: controller.signal
@@ -33,15 +34,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
             clearTimeout(timeoutId);
 
-            
-            if (!response.ok) {
+    if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
+                
+                if (response.status === 404) {
+                    throw new Error(`Usuário "${nomeDoPerfil}" não encontrado no GitHub.`);
+                } else if (response.status === 403) {
+                    throw new Error("Limite de requisições à API excedido. Tente novamente mais tarde.");
+                } else {
+                    throw new Error(errorData.message || `Erro HTTP ${response.status} ao acessar a API`);
+                }
             }
 
+    const json = await response.json();
             
-            const json = await response.json();
-            
+            // Validação dos dados recebidos
+            if (!json.login) {
+                throw new Error("Dados do usuário inválidos recebidos da API");
+            }
             avatarElement.src = json.avatar_url;
             nameElement.innerText = json.name || "Nome não disponível";
             usernameElement.innerText = `@${json.login}`;
@@ -52,22 +62,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (erro) {
             console.error("Erro detalhado:", erro);
-            
-            // Tratamento específico para erros de comunicação
+            // Tratamento específico para diferentes tipos de erro
             if (erro.name === 'AbortError') {
                 alert("A requisição demorou muito. Verifique sua conexão e tente novamente.");
             } else if (erro.message.includes("Failed to fetch") || 
-                    erro.message.includes("NetworkError") || 
-                    erro.message.includes("ERR_INTERNET_DISCONNECTED")) {
-                alert("Erro de comunicação com o servidor. Verifique sua conexão com a internet.");
-            } else if (erro.message.includes("Not Found")) {
-                alert("Usuário não encontrado no GitHub. Verifique o nome digitado.");
-            } else if (erro.message.includes("API rate limit exceeded")) {
-                alert("Limite de requisições excedido. Tente novamente mais tarde.");
+                    erro.message.includes("NetworkError")) {
+                throw new Error("Erro de conexão. Verifique sua internet e tente novamente.");
             } else {
-                alert(`Erro ao acessar a API: ${erro.message}`);
+                alert(erro.message);
             }
-
             // Reset dos elementos em caso de erro
             avatarElement.src = "https://via.placeholder.com/180x180";
             nameElement.innerText = "";
@@ -76,9 +79,7 @@ document.addEventListener('DOMContentLoaded', function() {
             followersElement.innerText = "...";
             followingElement.innerText = "...";
             linkElement.href = "#";
-
-        } finally {
-            // Restaura o botão 
+    } finally {
             botaoCarregar.disabled = false;
             botaoCarregar.textContent = "Carregar";
         }
